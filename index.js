@@ -75,7 +75,7 @@ app.get('/api/details', async (req, res) => {
     }
 });
 
-// 3. 💡 (المنقذ) جلب صور الفصل بطريقة الذكاء وتخطي الإخفاء
+// 3. جلب صور الفصل بقوة الاختراق
 app.get('/api/chapter', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'الرابط مطلوب' });
@@ -86,32 +86,46 @@ app.get('/api/chapter', async (req, res) => {
         
         let images = [];
         
-        // 🔥 الخدعة 1: استخراج الصور لو كانت مخفية داخل كود الجافاسكربت (زي موقع Lek Manga)
-        const scriptContent = $('script').filter((i, el) => $(el).html().includes('ts_reader.run')).html();
+        // 🔥 الخدعة 1: استخراج الصور لو كانت مشفرة داخل جافاسكربت (أغلب المواقع الصعبة تستخدم فيها)
+        const scriptContent = $('script').filter((i, el) => $(el).html().includes('ts_reader') || $(el).html().includes('images')).html();
         if (scriptContent) {
-            try {
+            // نبحث عن أي مصفوفة صور داخل السكربت
+            const match = scriptContent.match(/"images":\s*\[(.*?)\]/);
+            if (match) {
+                try {
+                    const urls = JSON.parse(`[${match[1]}]`);
+                    images = urls;
+                } catch(e) { console.log('خطأ في فك تشفير الصور'); }
+            } else {
+                // محاولة فك تشفير نظام ts_reader
                 const jsonMatch = scriptContent.match(/ts_reader\.run\((.*?)\);/);
                 if (jsonMatch && jsonMatch[1]) {
-                    const readerData = JSON.parse(jsonMatch[1]);
-                    if (readerData.sources && readerData.sources.length > 0) {
-                        images = readerData.sources[0].images;
-                        return res.json({ success: true, images });
-                    }
-                }
-            } catch (e) { console.log('خطأ في استخراج الصور من السكربت'); }
-        }
-
-        // 🔥 الخدعة 2: استخراج الصور العادية لو الموقع ما يخفيش فيها
-        $('#readerarea img, .reading-content img, .page-break img, .blocks-gallery-item img, .image-container img').each((i, el) => {
-            let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('data-lazy-src') || $(el).attr('data-aload');
-            if (src) {
-                src = src.trim();
-                // التأكد إنها صورة حقيقية ومش لوجو الموقع
-                if (src.startsWith('http') && !src.includes('logo') && !src.includes('banner')) {
-                    images.push(src);
+                    try {
+                        const readerData = JSON.parse(jsonMatch[1]);
+                        if (readerData.sources && readerData.sources.length > 0) {
+                            images = readerData.sources[0].images;
+                        }
+                    } catch(e) { console.log('خطأ في فك ts_reader'); }
                 }
             }
-        });
+        }
+
+        // 🔥 الخدعة 2: لو الخدعة الأولى فشلت، نهجموا على كل كلاسات الصور الممكنة في HTML
+        if (images.length === 0) {
+            $('#readerarea img, .reading-content img, .page-break img, .epcontent img, .entry-content img, .vung-doc img').each((i, el) => {
+                let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('data-lazy-src') || $(el).attr('data-cfsrc');
+                if (src) {
+                    src = src.trim();
+                    // تنظيف الرابط (بعض المواقع تحط في الرابط بدون https)
+                    if (src.startsWith('//')) src = 'https:' + src;
+                    
+                    // التأكد إنها صورة فصل مش لوجو أو أيقونة
+                    if (src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
+                        images.push(src);
+                    }
+                }
+            });
+        }
         
         res.json({ success: true, images });
     } catch (error) {
