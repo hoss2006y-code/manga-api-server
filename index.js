@@ -1,11 +1,10 @@
 const express = require('express');
 const cors = require('cors');
-const { connect } = require('puppeteer-real-browser');
+const puppeteer = require('puppeteer'); // 💡 استدعينا المكتبة الجديدة هنا
 
 const app = express();
 app.use(cors()); 
 
-// 💡 هذا الرد اللي يخلي UptimeRobot يشوف السيرفر شغال ديما
 app.get('/', (req, res) => {
     res.status(200).send('السيرفر يعمل بنجاح 24/7 يا زعيم! 🚀');
 });
@@ -17,9 +16,25 @@ app.get('/api/scrape', async (req, res) => {
     let browser = null;
     try {
         console.log(`[+] جاري سحب البيانات من: ${targetUrl}`);
-        const response = await connect({ headless: "auto", customConfig: {}, turnstile: true, disableXvfb: false, ignoreAllFlags: false });
-        browser = response.browser;
-        const page = response.page;
+        
+        // 💡 إعدادات خاصة بالسيرفرات السحابية المجانية باش يشتغل بدون مشاكل
+        browser = await puppeteer.launch({
+            headless: true,
+            args: [
+                '--no-sandbox',
+                '--disable-setuid-sandbox',
+                '--disable-dev-shm-usage',
+                '--disable-gpu',
+                '--no-first-run',
+                '--no-zygote',
+                '--single-process'
+            ]
+        });
+        
+        const page = await browser.newPage();
+        
+        // 💡 خدعة بسيطة لتجاوز الحماية (نتظاهروا إننا نستخدموا ويندوز عادي)
+        await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
 
         await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 60000 });
         await new Promise(r => setTimeout(r, 3000));
