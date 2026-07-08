@@ -1,7 +1,6 @@
 {
   "name": "manga-api",
   "version": "1.0.0",
-  "description": "Manga Scraper API",
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
@@ -9,6 +8,7 @@
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.19.2",
-    "puppeteer": "^22.12.1"
+    "axios": "^1.6.8",
+    "cheerio": "^1.0.0-rc.12"
   }
 }
