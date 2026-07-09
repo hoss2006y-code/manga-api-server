@@ -6,14 +6,13 @@ const cheerio = require('cheerio');
 const app = express();
 app.use(cors());
 
-// 💡 المفتاح السحري بتاعك
+// المفتاح السحري بتاعك
 const SCRAPER_API_KEY = 'Fa81bf7ff3fd364c2264178fc047ddb90bb7ade7dad60cf2c0b9e806e608db34';
 
-// دالة مساعدة لتوليد رابط التخطي
+// دالة مساعدة لتوليد رابط التخطي (زدنا فيها بعض الإعدادات لضمان النجاح)
 const getScraperUrl = (targetUrl, renderJs = false) => {
     let baseUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
     if (renderJs) {
-        // هذا الأمر يخلي ScraperAPI يفتح متصفح مخفي بالكامل ويفك شفرة الصور
         baseUrl += '&render=true'; 
     }
     return baseUrl;
@@ -26,10 +25,11 @@ app.get('/', (req, res) => {
 // 1. جلب قائمة المانجا
 app.get('/api/scrape', async (req, res) => {
     const targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).json({ success: false, error: 'الرجاء إرسال رابط url' });
+    if (!targetUrl) return res.status(400).json({ success: false, error: 'الرجاء إرسال رابط url (مثال: ?url=https://lek-manga.net/manga)' });
 
     try {
-        const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 30000 });
+        // زدنا وقت الانتظار لـ 60 ثانية باش السيرفر الوسيط يكمل فك الحماية
+        const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 60000 });
         const $ = cheerio.load(data);
         let items = [];
         
@@ -52,7 +52,9 @@ app.get('/api/scrape', async (req, res) => {
         }
         res.status(200).json({ success: true, count: items.length, data: items });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        // طباعة تفاصيل الخطأ بدقة
+        const errorMsg = error.response && error.response.data ? error.response.data : error.message;
+        res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر الوسيط: ' + errorMsg });
     }
 });
 
@@ -62,7 +64,7 @@ app.get('/api/details', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ error: 'الرابط مطلوب' });
 
     try {
-        const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 30000 });
+        const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 60000 });
         const $ = cheerio.load(data);
         
         let chapters = [];
@@ -76,18 +78,18 @@ app.get('/api/details', async (req, res) => {
         
         res.json({ success: true, description, chapters });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        const errorMsg = error.response && error.response.data ? error.response.data : error.message;
+        res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر الوسيط: ' + errorMsg });
     }
 });
 
-// 3. 💡 جلب صور الفصل بقوة كسر الحماية
+// 3. جلب صور الفصل بقوة كسر الحماية (render=true)
 app.get('/api/chapter', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'الرابط مطلوب' });
 
     try {
-        // استخدمنا render=true ليقوم بفك تشفير ts_reader بالكامل
-        const { data } = await axios.get(getScraperUrl(targetUrl, true), { timeout: 60000 });
+        const { data } = await axios.get(getScraperUrl(targetUrl, true), { timeout: 90000 }); // 90 ثانية لأن المتصفح يحتاج وقت للصور
         const $ = cheerio.load(data);
         
         let images = [];
@@ -127,7 +129,8 @@ app.get('/api/chapter', async (req, res) => {
         
         res.json({ success: true, images });
     } catch (error) {
-        res.status(500).json({ success: false, error: error.message });
+        const errorMsg = error.response && error.response.data ? error.response.data : error.message;
+        res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر الوسيط: ' + errorMsg });
     }
 });
 
