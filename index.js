@@ -9,7 +9,6 @@ app.use(cors());
 // المفتاح السحري بتاعك
 const SCRAPER_API_KEY = 'Fa81bf7ff3fd364c2264178fc047ddb90bb7ade7dad60cf2c0b9e806e608db34';
 
-// دالة مساعدة لتوليد رابط التخطي (زدنا فيها بعض الإعدادات لضمان النجاح)
 const getScraperUrl = (targetUrl, renderJs = false) => {
     let baseUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
     if (renderJs) {
@@ -19,16 +18,15 @@ const getScraperUrl = (targetUrl, renderJs = false) => {
 };
 
 app.get('/', (req, res) => {
-    res.status(200).send('سيرفر المانجا الشامل يعمل بنجاح مع تخطي الحماية! 🚀');
+    res.status(200).send('سيرفر المانجا الشامل يعمل بنجاح! 🚀');
 });
 
-// 1. جلب قائمة المانجا
+// 1. جلب قائمة المانجا (معدل لطباعة الخطأ على الشاشة)
 app.get('/api/scrape', async (req, res) => {
     const targetUrl = req.query.url;
-    if (!targetUrl) return res.status(400).json({ success: false, error: 'الرجاء إرسال رابط url (مثال: ?url=https://lek-manga.net/manga)' });
+    if (!targetUrl) return res.status(200).json({ success: true, count: 1, data: [{ title: 'الرجاء كتابة الرابط كاملاً', detailUrl: '', coverUrl: '', latestChapter: '', rating: 0 }] });
 
     try {
-        // زدنا وقت الانتظار لـ 60 ثانية باش السيرفر الوسيط يكمل فك الحماية
         const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 60000 });
         const $ = cheerio.load(data);
         let items = [];
@@ -52,9 +50,19 @@ app.get('/api/scrape', async (req, res) => {
         }
         res.status(200).json({ success: true, count: items.length, data: items });
     } catch (error) {
-        // طباعة تفاصيل الخطأ بدقة
-        const errorMsg = error.response && error.response.data ? error.response.data : error.message;
-        res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر الوسيط: ' + errorMsg });
+        // 💡 الحركة الذكية: حنعرضوا الخطأ كأنه كرت مانجا في التليفون!
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        res.status(200).json({ 
+            success: true, 
+            count: 1, 
+            data: [{ 
+                title: `🚨 خطأ السيرفر الوسيط: ${errorMsg}`, 
+                detailUrl: 'https://lek-manga.net', 
+                coverUrl: 'https://via.placeholder.com/150', 
+                latestChapter: 'حاول مجدداً', 
+                rating: 0.0 
+            }] 
+        });
     }
 });
 
@@ -78,37 +86,32 @@ app.get('/api/details', async (req, res) => {
         
         res.json({ success: true, description, chapters });
     } catch (error) {
-        const errorMsg = error.response && error.response.data ? error.response.data : error.message;
-        res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر الوسيط: ' + errorMsg });
+        const errorMsg = error.response && error.response.data ? JSON.stringify(error.response.data) : error.message;
+        res.json({ success: true, description: 'فشل التحميل', chapters: [{ title: `🚨 خطأ: ${errorMsg}`, url: '' }] });
     }
 });
 
-// 3. جلب صور الفصل بقوة كسر الحماية (render=true)
+// 3. جلب صور الفصل
 app.get('/api/chapter', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'الرابط مطلوب' });
 
     try {
-        const { data } = await axios.get(getScraperUrl(targetUrl, true), { timeout: 90000 }); // 90 ثانية لأن المتصفح يحتاج وقت للصور
+        const { data } = await axios.get(getScraperUrl(targetUrl, true), { timeout: 90000 });
         const $ = cheerio.load(data);
-        
         let images = [];
         
         const scriptContent = $('script').filter((i, el) => $(el).html().includes('ts_reader') || $(el).html().includes('images')).html();
         if (scriptContent) {
             const match = scriptContent.match(/"images":\s*\[(.*?)\]/);
             if (match) {
-                try {
-                    images = JSON.parse(`[${match[1]}]`);
-                } catch(e) {}
+                try { images = JSON.parse(`[${match[1]}]`); } catch(e) {}
             } else {
                 const jsonMatch = scriptContent.match(/ts_reader\.run\((.*?)\);/);
                 if (jsonMatch && jsonMatch[1]) {
                     try {
                         const readerData = JSON.parse(jsonMatch[1]);
-                        if (readerData.sources && readerData.sources.length > 0) {
-                            images = readerData.sources[0].images;
-                        }
+                        if (readerData.sources && readerData.sources.length > 0) { images = readerData.sources[0].images; }
                     } catch(e) {}
                 }
             }
@@ -120,17 +123,13 @@ app.get('/api/chapter', async (req, res) => {
                 if (src) {
                     src = src.trim();
                     if (src.startsWith('//')) src = 'https:' + src;
-                    if (src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
-                        images.push(src);
-                    }
+                    if (src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) { images.push(src); }
                 }
             });
         }
-        
         res.json({ success: true, images });
     } catch (error) {
-        const errorMsg = error.response && error.response.data ? error.response.data : error.message;
-        res.status(500).json({ success: false, error: 'حدث خطأ في السيرفر الوسيط: ' + errorMsg });
+        res.json({ success: true, images: [] });
     }
 });
 
