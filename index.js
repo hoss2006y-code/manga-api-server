@@ -6,16 +6,21 @@ const cheerio = require('cheerio');
 const app = express();
 app.use(cors());
 
-const headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-    'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-    'Accept-Language': 'ar,en-US;q=0.9,en;q=0.8',
-    'Connection': 'keep-alive',
-    'Upgrade-Insecure-Requests': '1'
+// 💡 المفتاح السحري بتاعك
+const SCRAPER_API_KEY = 'Fa81bf7ff3fd364c2264178fc047ddb90bb7ade7dad60cf2c0b9e806e608db34';
+
+// دالة مساعدة لتوليد رابط التخطي
+const getScraperUrl = (targetUrl, renderJs = false) => {
+    let baseUrl = `http://api.scraperapi.com?api_key=${SCRAPER_API_KEY}&url=${encodeURIComponent(targetUrl)}`;
+    if (renderJs) {
+        // هذا الأمر يخلي ScraperAPI يفتح متصفح مخفي بالكامل ويفك شفرة الصور
+        baseUrl += '&render=true'; 
+    }
+    return baseUrl;
 };
 
 app.get('/', (req, res) => {
-    res.status(200).send('السيرفر الشامل يعمل بنجاح! 🚀');
+    res.status(200).send('سيرفر المانجا الشامل يعمل بنجاح مع تخطي الحماية! 🚀');
 });
 
 // 1. جلب قائمة المانجا
@@ -24,7 +29,7 @@ app.get('/api/scrape', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ success: false, error: 'الرجاء إرسال رابط url' });
 
     try {
-        const { data } = await axios.get(targetUrl, { headers, timeout: 15000 });
+        const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 30000 });
         const $ = cheerio.load(data);
         let items = [];
         
@@ -57,7 +62,7 @@ app.get('/api/details', async (req, res) => {
     if (!targetUrl) return res.status(400).json({ error: 'الرابط مطلوب' });
 
     try {
-        const { data } = await axios.get(targetUrl, { headers, timeout: 15000 });
+        const { data } = await axios.get(getScraperUrl(targetUrl, false), { timeout: 30000 });
         const $ = cheerio.load(data);
         
         let chapters = [];
@@ -75,29 +80,26 @@ app.get('/api/details', async (req, res) => {
     }
 });
 
-// 3. جلب صور الفصل بقوة الاختراق
+// 3. 💡 جلب صور الفصل بقوة كسر الحماية
 app.get('/api/chapter', async (req, res) => {
     const targetUrl = req.query.url;
     if (!targetUrl) return res.status(400).json({ error: 'الرابط مطلوب' });
 
     try {
-        const { data } = await axios.get(targetUrl, { headers, timeout: 15000 });
+        // استخدمنا render=true ليقوم بفك تشفير ts_reader بالكامل
+        const { data } = await axios.get(getScraperUrl(targetUrl, true), { timeout: 60000 });
         const $ = cheerio.load(data);
         
         let images = [];
         
-        // 🔥 الخدعة 1: استخراج الصور لو كانت مشفرة داخل جافاسكربت (أغلب المواقع الصعبة تستخدم فيها)
         const scriptContent = $('script').filter((i, el) => $(el).html().includes('ts_reader') || $(el).html().includes('images')).html();
         if (scriptContent) {
-            // نبحث عن أي مصفوفة صور داخل السكربت
             const match = scriptContent.match(/"images":\s*\[(.*?)\]/);
             if (match) {
                 try {
-                    const urls = JSON.parse(`[${match[1]}]`);
-                    images = urls;
-                } catch(e) { console.log('خطأ في فك تشفير الصور'); }
+                    images = JSON.parse(`[${match[1]}]`);
+                } catch(e) {}
             } else {
-                // محاولة فك تشفير نظام ts_reader
                 const jsonMatch = scriptContent.match(/ts_reader\.run\((.*?)\);/);
                 if (jsonMatch && jsonMatch[1]) {
                     try {
@@ -105,21 +107,17 @@ app.get('/api/chapter', async (req, res) => {
                         if (readerData.sources && readerData.sources.length > 0) {
                             images = readerData.sources[0].images;
                         }
-                    } catch(e) { console.log('خطأ في فك ts_reader'); }
+                    } catch(e) {}
                 }
             }
         }
 
-        // 🔥 الخدعة 2: لو الخدعة الأولى فشلت، نهجموا على كل كلاسات الصور الممكنة في HTML
         if (images.length === 0) {
             $('#readerarea img, .reading-content img, .page-break img, .epcontent img, .entry-content img, .vung-doc img').each((i, el) => {
                 let src = $(el).attr('src') || $(el).attr('data-src') || $(el).attr('data-lazy-src') || $(el).attr('data-cfsrc');
                 if (src) {
                     src = src.trim();
-                    // تنظيف الرابط (بعض المواقع تحط في الرابط بدون https)
                     if (src.startsWith('//')) src = 'https:' + src;
-                    
-                    // التأكد إنها صورة فصل مش لوجو أو أيقونة
                     if (src.startsWith('http') && !src.includes('logo') && !src.includes('icon')) {
                         images.push(src);
                     }
